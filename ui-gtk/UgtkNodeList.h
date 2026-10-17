@@ -75,6 +75,8 @@ GType  ugtk_node_list_get_type (void);
 
 // Notify the model that items changed (call after root/data changes)
 void  ugtk_node_list_refresh (UgtkNodeList* ulist);
+// Emit a precise change and re-sync last_count with the live list.
+void  ugtk_node_list_notify (UgtkNodeList* ulist, guint position, guint removed, guint added);
 
 #ifdef __cplusplus
 }

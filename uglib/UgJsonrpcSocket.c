@@ -93,6 +93,12 @@ int   ug_jsonrpc_socket_connect (UgJsonrpcSocket* jrsock,
                                  const char* port_or_serv)
 {
 	SOCKET  fd;
+	int     result;
+	int     in_progress = FALSE;
+	int     opt_value;
+	socklen_t  opt_length;
+	fd_set    fdset;
+	struct timeval timeout;
 
 	if (jrsock->socket != INVALID_SOCKET)
 		return FALSE;
@@ -101,11 +107,38 @@ int   ug_jsonrpc_socket_connect (UgJsonrpcSocket* jrsock,
 	if (fd == INVALID_SOCKET)
 		return FALSE;
 
-	if (ug_socket_connect (fd, addr, port_or_serv) == SOCKET_ERROR) {
+	// non-blocking connect with a bounded timeout: RPC services from
+	// other programs (e.g. aria2c) may occupy the port, and a plain
+	// blocking connect() could hang forever on a stalled connection
+	ug_socket_set_blocking (fd, FALSE);
+	result = ug_socket_connect (fd, addr, port_or_serv);
+#if (defined _WIN32 || defined _WIN64)
+	if (WSAGetLastError() == WSAEWOULDBLOCK)
+		in_progress = TRUE;
+#else
+	if (result == SOCKET_ERROR && errno == EINPROGRESS)
+		in_progress = TRUE;
+#endif
+	if (result == SOCKET_ERROR && in_progress) {
+		FD_ZERO (&fdset);
+		FD_SET (fd, &fdset);
+		timeout.tv_sec = 1;
+		timeout.tv_usec = 0;
+		if (select (fd + 1, NULL, &fdset, NULL, &timeout) > 0) {
+			opt_value = 1;
+			opt_length = sizeof (opt_value);
+			getsockopt (fd, SOL_SOCKET, SO_ERROR, (void*) &opt_value, &opt_length);
+			if (opt_value == 0)
+				result = fd;    // connect OK
+		}
+	}
+
+	if (result == SOCKET_ERROR || result < 0) {
 		closesocket (fd);
 		return FALSE;
 	}
 
+	ug_socket_set_blocking (fd, TRUE);
 	jrsock->socket = fd;
 	return TRUE;
 }

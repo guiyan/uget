@@ -88,6 +88,17 @@ const UgEntry  UgetNodeEntry[] =
 	{NULL}    // null-terminated
 };
 
+static struct {
+	UgNodeTrackFunc  alloc;
+	UgNodeTrackFunc  free;
+} node_track_funcs;
+
+void  uget_node_set_track_funcs (UgNodeTrackFunc alloc_func, UgNodeTrackFunc free_func)
+{
+	node_track_funcs.alloc = alloc_func;
+	node_track_funcs.free  = free_func;
+}
+
 UgetNode*  uget_node_new (UgetNode* node_real)
 {
 	UgetNode*  node;
@@ -98,14 +109,48 @@ UgetNode*  uget_node_new (UgetNode* node_real)
 	node = ug_malloc (sizeof (UgetNode));
 #endif // HAVE_GLIB
 	uget_node_init (node, node_real);
+	if (node_track_funcs.alloc)
+		node_track_funcs.alloc (node);
 	return node;
 }
 
+#ifdef HAVE_GLIB
+// Defer node freeing to the next GTK main-loop idle: the UI caches raw
+// UgetNode pointers inside GtkListItem/GListModel objects.  When a
+// download is deleted, rebinding rows (e.g. by clicking the sidebar)
+// may still dereference the freed clone; keeping detached nodes
+// readable for one extra main-loop round makes every such access
+// harmless (track hooks above let bindings skip dead nodes meanwhile).
+static GQueue   node_zombie_queue;
+static guint    node_zombie_source = 0;
+
+static gboolean  node_zombie_flush (gpointer data)
+{
+	UgetNode*  node;
+
+	while ((node = g_queue_pop_head (&node_zombie_queue)) != NULL) {
+		if (node->info)
+			ug_info_unref (node->info);
+		g_free (node);
+	}
+	node_zombie_source = 0;
+	return G_SOURCE_REMOVE;
+}
+#endif  // HAVE_GLIB
+
 void  uget_node_free(UgetNode* node)
 {
-	uget_node_final(node);
+	if (node_track_funcs.free)
+		node_track_funcs.free (node);
+	uget_node_final(node);    // detach + notifications happen synchronously
 #ifdef HAVE_GLIB
-	g_free(node);
+	// uget_node_final() unrefs info; re-ref it so the UgInfo stays
+	// alive together with the node until the deferred free below.
+	if (node->info)
+		ug_info_ref (node->info);
+	g_queue_push_tail (&node_zombie_queue, node);
+	if (node_zombie_source == 0)
+		node_zombie_source = g_idle_add (node_zombie_flush, NULL);
 #else
 	ug_free(node);
 #endif // HAVE_GLIB

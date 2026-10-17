@@ -129,6 +129,21 @@ void  ugtk_traveler_set_sorting (UgtkTraveler*  traveler,
                                  UgtkNodeColumn nth_column,
                                  GtkSortType    type);
 
+// Hard-rebuild every model so that cached list items wrapping nodes
+// freed by delete/recycle/move operations are dropped, fix up
+// selection & cursor, then re-select live 'real_nodes' (base nodes;
+// NULL entries and dead nodes are skipped).  Pass real_cursor == NULL
+// to clear the download cursor.
+void  ugtk_traveler_rebuild (UgtkTraveler* traveler,
+                             GList*        real_nodes,
+                             UgetNode*     real_cursor);
+
+// Rebuild models keeping the current selection (sidebar positions are
+// preserved).  Call after adding downloads/categories so the sidebar
+// quantity labels and rows rebind with fresh items.
+// (retired)
+
+
 #ifdef __cplusplus
 }
 #endif

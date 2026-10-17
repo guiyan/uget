@@ -65,6 +65,14 @@ struct UgtkNodeObjectClass
 GType            ugtk_node_object_get_type (void);
 UgtkNodeObject*  ugtk_node_object_new (UgetNode* node);
 
+// TRUE while 'node' is a heap UgetNode that has not been freed yet.
+// Nodes may be freed by the library while GTK still caches wrappers
+// for them; treat dead nodes like NULL in view bindings.
+gboolean  ugtk_node_object_is_live (UgetNode* node);
+
+// install library hooks, idempotent (called on first node object)
+void  ugtk_node_object_track_init (void);
+
 #ifdef __cplusplus
 }
 #endif

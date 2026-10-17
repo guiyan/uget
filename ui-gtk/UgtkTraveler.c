@@ -480,6 +480,118 @@ void  ugtk_traveler_set_sorting (UgtkTraveler*  traveler,
 }
 
 // ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+// selection/cursor recovery after structural operations (delete, recycle,
+// move_to, trim...).  Model notifications are already emitted precisely by
+// the library (bridge), and node memory stays valid until the next idle
+// (deferred free), so no model replacement or raw items_changed is needed
+// here: just make sure nothing stale is kept selected.
+
+// find position of a clone belonging to 'base' (a real full node)
+static int find_base_position (GListModel* model, UgetNode* base)
+{
+	guint n = g_list_model_get_n_items (model);
+	guint i;
+
+	for (i = 0;  i < n;  i++) {
+		UgtkNodeObject* obj = g_list_model_get_item (model, i);
+		if (obj) {
+			UgetNode* node = obj->node;
+			g_object_unref (obj);
+			if (node && ugtk_node_object_is_live (node) && node->base == base)
+				return (int) i;
+		}
+	}
+	return -1;
+}
+
+void  ugtk_traveler_rebuild (UgtkTraveler* traveler, GList* real_nodes, UgetNode* real_cursor)
+{
+	GtkBitset*  sel;
+	GtkBitset*  mask;
+	UgetNode*   node;
+	GList*      link;
+	guint       n;
+	int         pos;
+
+	// the old cursor may wrap a freed node
+	traveler->download.cursor.node = NULL;
+
+	// 1. normalize sidebar selections so state.model->root and
+	//    download.model->root point at live nodes again
+	n = g_list_model_get_n_items (G_LIST_MODEL (traveler->category.model));
+	pos = gtk_single_selection_get_selected (traveler->category.selection);
+	if (pos < 0 || (guint) pos >= n ||
+	    ugtk_node_object_is_live (get_node_at (
+		    G_LIST_MODEL (traveler->category.model), (guint) pos)) == FALSE)
+		pos = 0;
+	traveler->category.cursor.pos      = -1;
+	traveler->category.cursor.pos_last = -1;
+	traveler->category.cursor.node     = NULL;
+	gtk_single_selection_set_selected (traveler->category.selection,
+			GTK_INVALID_LIST_POSITION);
+	gtk_single_selection_set_selected (traveler->category.selection, pos);
+
+	n = g_list_model_get_n_items (G_LIST_MODEL (traveler->state.model));
+	pos = gtk_single_selection_get_selected (traveler->state.selection);
+	if (pos < 0 || (guint) pos >= n ||
+	    ugtk_node_object_is_live (get_node_at (
+		    G_LIST_MODEL (traveler->state.model), (guint) pos)) == FALSE)
+		pos = 0;
+	traveler->state.cursor.pos      = -1;
+	traveler->state.cursor.pos_last = -1;
+	traveler->state.cursor.node     = NULL;
+	gtk_single_selection_set_selected (traveler->state.selection,
+			GTK_INVALID_LIST_POSITION);
+	gtk_single_selection_set_selected (traveler->state.selection, pos);
+
+	// 2. clear the download selection (dead clones may be selected)
+	traveler->download.cursor.pos      = -1;
+	traveler->download.cursor.pos_last = -1;
+	n = g_list_model_get_n_items (G_LIST_MODEL (traveler->download.model));
+	sel  = gtk_bitset_new_empty ();
+	mask = gtk_bitset_new_range (0, n);
+	gtk_selection_model_set_selection (
+			GTK_SELECTION_MODEL (traveler->download.selection), sel, mask);
+	gtk_bitset_unref (sel);
+	gtk_bitset_unref (mask);
+
+	// 3. restore selection/cursor from live real (base) nodes
+	sel  = gtk_bitset_new_empty ();
+	mask = gtk_bitset_new_range (0, n);
+	pos  = -1;
+	if (real_cursor && ugtk_node_object_is_live (real_cursor)) {
+		int p = find_base_position (
+				G_LIST_MODEL (traveler->download.model), real_cursor);
+		if (p >= 0) {
+			gtk_bitset_add (sel, (guint) p);
+			pos = p;
+		}
+	}
+	for (link = real_nodes;  link;  link = link->next) {
+		node = link->data;
+		if (node == NULL || ugtk_node_object_is_live (node) == FALSE)
+			continue;
+		int p = find_base_position (
+				G_LIST_MODEL (traveler->download.model), node);
+		if (p >= 0) {
+			gtk_bitset_add (sel, (guint) p);
+			if (pos < 0)
+				pos = p;
+		}
+	}
+	gtk_selection_model_set_selection (
+			GTK_SELECTION_MODEL (traveler->download.selection), sel, mask);
+	gtk_bitset_unref (sel);
+	gtk_bitset_unref (mask);
+	if (pos >= 0) {
+		traveler->download.cursor.pos = pos;
+		traveler->download.cursor.node = get_node_at (
+				G_LIST_MODEL (traveler->download.model), pos);
+	}
+}
+
+// ----------------------------------------------------------------------------
 // signal handlers
 
 static void on_state_selection_changed (GtkSelectionModel* model, guint pos, guint n_items, UgtkTraveler* traveler)
@@ -536,10 +648,27 @@ static void on_category_selection_changed (GtkSelectionModel* model, guint pos, 
 	if (node) {
 		traveler->state.model->root = node;
 		ugtk_node_list_refresh (traveler->state.model);
-		// re-select the same state position
-		if (traveler->state.cursor.pos >= 0)
-			gtk_single_selection_set_selected (traveler->state.selection,
-					traveler->state.cursor.pos);
+		// re-select the same state position, as uGet 2.2.3 does: the
+		// active state filter (e.g. Queuing) is preserved across
+		// category switches, and on_state_selection_changed then
+		// points download.model->root at the new category's state
+		// node.  The saved cursor must be cleared first, otherwise
+		// the early-return in on_state_selection_changed would skip
+		// the download re-rooting when the row count is unchanged.
+		if (traveler->state.cursor.pos >= 0) {
+			int pos = traveler->state.cursor.pos;
+			traveler->state.cursor.pos = -1;
+			traveler->state.cursor.node = NULL;
+			gtk_single_selection_set_selected (
+					traveler->state.selection,
+					GTK_INVALID_LIST_POSITION);
+			gtk_single_selection_set_selected (
+					traveler->state.selection, pos);
+		}
+		else {
+			gtk_single_selection_set_selected (
+					traveler->state.selection, 0);
+		}
 	}
 }
 

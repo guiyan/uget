@@ -748,7 +748,13 @@ static UgThreadResult  plugin_thread(UgetPluginAria2* plugin)
 
 		// set gid for status request
 //		status_req->params.c.array->at[0].c.string = plugin->gids.at[0];
-		status_gid->c.string = plugin->gids.at[0];
+		// gid string is owned by plugin->gids and may be freed by
+		// plugin_sync() in the main thread (STATUS_ERROR/-REMOVED
+		// cases); never alias a dangling entry
+		if (plugin->gids.length > 0)
+			status_gid->c.string = plugin->gids.at[0];
+		else
+			status_gid->c.string = NULL;
 		// status request
 		uget_aria2_request(global.data, status_req);
 		// speed control : speed request & response
@@ -891,6 +897,9 @@ static UgThreadResult  plugin_thread(UgetPluginAria2* plugin)
 	}
 
 exit:
+	// detach the alias into plugin->gids before recycling status_req:
+	// plugin_sync() in the main thread may have freed the gid string
+	status_gid->c.string = NULL;
 	recycle_status_request(status_req);
 	plugin->stopped = TRUE;
 	uget_plugin_unref((UgetPlugin*)plugin);

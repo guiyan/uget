@@ -43,6 +43,7 @@
 #    include <gst/gst.h>
 #  endif
 #endif
+#include <UgtkNodeObject.h>
 
 #ifdef _MSC_VER
 #define _CRT_SECURE_NO_WARNINGS
@@ -189,12 +190,10 @@ static gboolean  ugtk_app_timeout_queuing (UgtkApp* app)
 		no_queuing = TRUE;
 	}
 
-	// if current status is "All" or "Active"
-	if (app->traveler.state.cursor.pos == 0 ||
-	    app->traveler.state.cursor.pos == 1)
-	{
-		ugtk_traveler_reserve_selection (&app->traveler);
-	}
+	// snapshot the selection BEFORE uget_app_grow() reorganizes
+	// nodes: activate/queuing transitions free and re-create clones
+	// (fake nodes) of active & queuing downloads
+	ugtk_traveler_reserve_selection (&app->traveler);
 
 	n_active = uget_app_grow ((UgetApp*) app, no_queuing);
 	if (n_active != n_active_last) {
@@ -269,9 +268,13 @@ static gboolean  ugtk_app_timeout_queuing (UgtkApp* app)
 		// adjust speed limit every 1 seconds
 		if (n_counts & 1)
 			uget_task_adjust_speed (&app->task);
-		// summary
-		ugtk_summary_show (&app->summary,
-				ugtk_traveler_get_cursor (&app->traveler));
+		// summary -- the cursor may wrap a clone freed by uget_app_grow()
+		{
+			UgetNode* cursor = ugtk_traveler_get_cursor (&app->traveler);
+			if (cursor && ugtk_node_object_is_live (cursor) == FALSE)
+				cursor = NULL;
+			ugtk_summary_show (&app->summary, cursor);
+		}
 		// status bar
 		ugtk_statusbar_set_speed (&app->statusbar,
 				app->task.speed.download, app->task.speed.upload);
@@ -280,15 +283,20 @@ static gboolean  ugtk_app_timeout_queuing (UgtkApp* app)
 				app->task.speed.download, app->task.speed.upload);
 	}
 
-	// if current status is "All" or "Active"
-	if (app->traveler.state.cursor.pos == 0 ||
-	    app->traveler.state.cursor.pos == 1)
 	{
-		if (app->n_moved > 0)
-			ugtk_traveler_restore_selection (&app->traveler);
+		// uget_app_grow()/trim() may free and re-create clones of
+		// downloads: cached items would wrap freed nodes. rebuild
+		// all models from the pre-grow (live) selection snapshot.
+		int n_trimmed = uget_app_trim ((UgetApp*) app, NULL);
+		if (app->n_moved > 0 || n_trimmed > 0) {
+			ugtk_traveler_rebuild (&app->traveler,
+					app->traveler.reserved.list,
+					app->traveler.reserved.node);
+		}
 	}
-
-	uget_app_trim((UgetApp*) app, NULL);
+	g_list_free (app->traveler.reserved.list);
+	app->traveler.reserved.list = NULL;
+	app->traveler.reserved.node = NULL;
 	if (app->n_moved > 0) {
 		// refresh other data & status
 		gtk_widget_queue_draw ((GtkWidget*) app->traveler.download.view);

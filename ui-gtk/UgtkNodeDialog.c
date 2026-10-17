@@ -58,9 +58,6 @@ static void on_cancel_node_dialog (GtkWidget* button, UgtkNodeDialog* ndialog);
 static gboolean on_close_node_dialog (GtkWindow* window, UgtkNodeDialog* ndialog);
 
 // Callback for Main Window model changes
-static void on_category_items_changed (GListModel* model, guint pos,
-                                       guint removed, guint added,
-                                       UgtkNodeDialog* ndialog);
 
 // ----------------------------------------------------------------------------
 // UgtkNodeDialog
@@ -129,11 +126,54 @@ UgtkNodeDialog*  ugtk_node_dialog_new (const char* title,
 	return ndialog;
 }
 
+// Deferred freeing of the dialog struct: async callbacks (clipboard
+// reader, handlers) may still hold a raw pointer to it one main-loop
+// round after the user closed the dialog; keeping the struct readable
+// for another idle makes late/reentrant access harmless.
+static GQueue   dialog_zombie_queue;
+static guint    dialog_zombie_source = 0;
+
+static gboolean  dialog_zombie_flush (gpointer data)
+{
+	UgtkNodeDialog*  ndialog;
+
+	while ((ndialog = g_queue_pop_head (&dialog_zombie_queue)) != NULL)
+		g_free (ndialog);
+	dialog_zombie_source = 0;
+	return G_SOURCE_REMOVE;
+}
+
 void  ugtk_node_dialog_free (UgtkNodeDialog* ndialog)
 {
-	ugtk_node_dialog_set_category (ndialog, NULL);
+	// reentrant invocations (double OK clicks, late async callbacks)
+	// must not re-run the cleanup on a partially freed dialog
+	if (ndialog->closing)
+		return;
+	ndialog->closing = TRUE;
+
+	// disconnect EVERY callback that references this dialog, not just
+	// the most recently connected one; duplicated handler connections
+	// previously leaked and fired on freed memory
+	if (ndialog->handler_id[0]) {
+		g_signal_handler_disconnect (
+				G_LIST_MODEL (ndialog->app->traveler.category.model),
+				ndialog->handler_id[0]);
+		ndialog->handler_id[0] = 0;
+	}
+	if (ndialog->handler_id[1] && ndialog->node_tree &&
+	    ndialog->node_view)
+	{
+		GtkSelectionModel* sel =
+				gtk_list_view_get_model (GTK_LIST_VIEW (ndialog->node_view));
+		if (sel)
+			g_signal_handler_disconnect (sel, ndialog->handler_id[1]);
+		ndialog->handler_id[1] = 0;
+	}
+
 	gtk_window_destroy (GTK_WINDOW (ndialog->self));
-	g_free (ndialog);
+	g_queue_push_tail (&dialog_zombie_queue, ndialog);
+	if (dialog_zombie_source == 0)
+		dialog_zombie_source = g_idle_add (dialog_zombie_flush, NULL);
 }
 
 void  ugtk_node_dialog_run (UgtkNodeDialog* ndialog,
@@ -268,8 +308,11 @@ void  ugtk_node_dialog_set_category (UgtkNodeDialog* ndialog, UgetNode* cnode)
 	if (cnode == NULL) {
 		if (ndialog->node_tree == NULL)
 			return;
-		model = G_LIST_MODEL (ndialog->app->traveler.category.model);
-		g_signal_handler_disconnect (model, ndialog->handler_id[0]);
+		if (ndialog->handler_id[0]) {
+			model = G_LIST_MODEL (ndialog->app->traveler.category.model);
+			g_signal_handler_disconnect (model, ndialog->handler_id[0]);
+			ndialog->handler_id[0] = 0;
+		}
 		return;
 	}
 
@@ -281,14 +324,25 @@ void  ugtk_node_dialog_set_category (UgtkNodeDialog* ndialog, UgetNode* cnode)
 	GtkSelectionModel* sel = gtk_list_view_get_model (lv);
 	if (sel) {
 		gtk_single_selection_set_selected (GTK_SINGLE_SELECTION (sel), nth);
-		g_signal_connect (sel, "notify::selected",
-				G_CALLBACK (on_selection_changed), ndialog);
+		// connect only once: this function may be called repeatedly
+		// (async clipboard resolution) and duplicated connections
+		// would fire on freed memory after the dialog is closed
+		if (ndialog->handler_id[1] == 0)
+			ndialog->handler_id[1] = g_signal_connect (sel, "notify::selected",
+					G_CALLBACK (on_selection_changed), ndialog);
 	}
 
-	// Connect to main window's category model for sync
-	model = G_LIST_MODEL (ndialog->app->traveler.category.model);
-	ndialog->handler_id[0] = g_signal_connect (model, "items-changed",
-			G_CALLBACK (on_category_items_changed), ndialog);
+	// Live sync of the dialog's category list with the main window's
+	// category model is intentionally not connected: the full-rebuild
+	// refresh fired inside every items-changed emission made the
+	// dialog's list-item manager lose track of tiles, and GTK aborted
+	// at dialog dispose (gtk_list_item_manager_clear_model).  The
+	// dialog's category list is built once at init; it does not need
+	// to follow main-window model changes.
+	if (ndialog->handler_id[0] == 0) {
+		model = NULL;
+		(void) model;
+	}
 }
 
 int  ugtk_node_dialog_get_category (UgtkNodeDialog* ndialog, UgetNode** cnode)
@@ -399,6 +453,14 @@ static void ugtk_node_dialog_init_list_ui (UgtkNodeDialog* ndialog,
 	GtkSingleSelection* sel;
 	int                 width;
 
+	// re-entry guard: set_category() can be called more than once (e.g.
+	// when an async clipboard paste matches a category).  Re-creating
+	// the list would leak widgets, models and handler ids (and
+	// eventually crashes in the item manager).  The category parent
+	// does not change for a dialog lifetime, so just reuse the UI.
+	if (ndialog->node_tree && ndialog->node_tree->root == root)
+		return;
+
 	// decide width
 	if (ndialog->app->setting.window.category)
 		width = gtk_paned_get_position (ndialog->app->window.hpaned);
@@ -406,6 +468,7 @@ static void ugtk_node_dialog_init_list_ui (UgtkNodeDialog* ndialog,
 		width = 165;
 
 	ndialog->node_tree = ugtk_node_tree_new (root, TRUE);
+	ndialog->node_view = ugtk_node_view_new_for_category ();
 	ndialog->node_view = ugtk_node_view_new_for_category ();
 
 	sel = gtk_single_selection_new (G_LIST_MODEL (ndialog->node_tree));
@@ -460,6 +523,8 @@ static void on_ok_new_category (GtkWidget* button, UgtkNodeDialog* ndialog)
 {
 	UgetNode* cnode;
 
+	if (ndialog->closing)
+		return;
 	cnode = uget_node_new (NULL);
 	ugtk_node_dialog_get(ndialog, cnode->info);
 	uget_app_add_category ((UgetApp*) ndialog->app, cnode, TRUE);
@@ -477,6 +542,8 @@ static void on_ok_new_download (GtkWidget* button, UgtkNodeDialog* ndialog)
 	UgetNode*   dnode;
 	const char* uri;
 
+	if (ndialog->closing)
+		return;
 	ugtk_node_dialog_store_recent (ndialog, ndialog->app);
 	dnode = uget_node_new (NULL);
 	ugtk_node_dialog_get(ndialog, dnode->info);
@@ -533,6 +600,8 @@ static void on_ok_edit_download (GtkWidget* button, UgtkNodeDialog* ndialog)
 
 static void on_cancel_node_dialog (GtkWidget* button, UgtkNodeDialog* ndialog)
 {
+	if (ndialog->closing)
+		return;
 	if (ndialog->node_info)
 		ug_info_unref(ndialog->node_info);
 	ugtk_node_dialog_free (ndialog);
@@ -547,12 +616,3 @@ static gboolean on_close_node_dialog (GtkWindow* window, UgtkNodeDialog* ndialog
 }
 
 // ----------------------------------------------------------------------------
-// Callback for Main Window operate
-
-static void on_category_items_changed (GListModel* model, guint pos,
-                                       guint removed, guint added,
-                                       UgtkNodeDialog* ndialog)
-{
-	// When the main window's category model changes, refresh our dialog's model
-	ugtk_node_tree_refresh (ndialog->node_tree);
-}

@@ -48,6 +48,7 @@
 #include <UgtkApp.h>
 #include <UgtkUtil.h>
 #include <UgtkNodeDialog.h>
+#include <UgtkNodeObject.h>
 #include <UgtkBatchDialog.h>
 #include <UgtkConfirmDialog.h>
 #include <UgtkSettingDialog.h>
@@ -57,6 +58,12 @@
 void  ugtk_app_init (UgtkApp* app, UgetRpc* rpc)
 {
 	char*  dir;
+
+	// MUST be installed before any UgetNode is allocated
+	// (uget_app_init loads categories below), otherwise nodes
+	// created prior to the hooks would be misjudged as freed by
+	// ugtk_node_object_is_live() and every list row would bind empty.
+	ugtk_node_object_track_init ();
 
 	app->rpc = rpc;
 	uget_app_init ((UgetApp*) app);
@@ -951,6 +958,9 @@ void  ugtk_app_delete_category (UgtkApp* app)
 	}
 	// remove category
 	uget_app_delete_category ((UgetApp*) app, cnode);
+	// dropping the category also frees its state clones and category
+	// clones cached by the models; rebuild everything safely
+	ugtk_traveler_rebuild (&app->traveler, NULL, NULL);
 	// sync UgtkMenubar.download.move_to
 	ugtk_menubar_sync_category (&app->menubar, app, TRUE);
 }
@@ -994,14 +1004,11 @@ void  ugtk_app_delete_download (UgtkApp* app, gboolean delete_files)
 			cursor = NULL;
 		link->data = NULL;
 	}
-	if (delete_files == FALSE /* && (mask & GDK_SHIFT_MASK) == 0 */) {
-		ugtk_traveler_set_cursor (&app->traveler, cursor);
-		ugtk_traveler_set_selected (&app->traveler, list);
-	}
+	// Hard-rebuild models: dropped nodes must not be referenced by
+	// any cached list item, otherwise rebinding rows (e.g. clicking
+	// the sidebar) dereferences freed memory.
+	ugtk_traveler_rebuild (&app->traveler, list, cursor);
 	g_list_free (list);
-	// refresh
-	gtk_widget_queue_draw ((GtkWidget*) app->traveler.category.view);
-	gtk_widget_queue_draw ((GtkWidget*) app->traveler.state.view);
 
 	app->user_action = TRUE;
 }
@@ -1216,16 +1223,18 @@ void  ugtk_app_move_download_to (UgtkApp* app, UgetNode* cnode)
 	for (link = list;  link;  link = link->next) {
 		node = link->data;
 		node = node->base;
-		if (node->parent == cnode)
+		if (node->parent == cnode) {
+			link->data = node;
 			continue;
+		}
 		uget_node_remove (node->parent, node);
 		uget_node_clear_fake (node);
 		uget_node_append (cnode, node);
+		link->data = node;
 	}
+	// clear_fake freed and rebuilt all clones of the moved nodes
+	ugtk_traveler_rebuild (&app->traveler, list, NULL);
 	g_list_free (list);
-	// refresh
-	gtk_widget_queue_draw ((GtkWidget*) app->traveler.category.view);
-	gtk_widget_queue_draw ((GtkWidget*) app->traveler.state.view);
 }
 
 // ------------------------------------

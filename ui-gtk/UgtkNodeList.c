@@ -146,3 +146,12 @@ void ugtk_node_list_refresh (UgtkNodeList* ulist)
 	ulist->last_count = new_n;
 	g_list_model_items_changed (G_LIST_MODEL (ulist), 0, old_n, new_n);
 }
+
+// Used by the node notification bridge.  Keep last_count in sync
+// with the live tree after emitting (same rationale as
+// ugtk_node_tree_notify).
+void ugtk_node_list_notify (UgtkNodeList* ulist, guint position, guint removed, guint added)
+{
+	g_list_model_items_changed (G_LIST_MODEL (ulist), position, removed, added);
+	ulist->last_count = ugtk_node_list_count (ulist);
+}

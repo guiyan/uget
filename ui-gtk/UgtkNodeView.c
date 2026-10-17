@@ -51,6 +51,11 @@ static inline UgetNode* get_node_from_item (GtkListItem* item)
 	UgtkNodeObject* obj = gtk_list_item_get_item (item);
 	if (obj == NULL)
 		return NULL;
+	// the C node may have been freed while GTK still caches this
+	// item (deleted downloads, recycled clones, ...).  Treat dead
+	// nodes like NULL so bind callbacks just leave the row blank.
+	if (ugtk_node_object_is_live (obj->node) == FALSE)
+		return NULL;
 	return obj->node;
 }
 

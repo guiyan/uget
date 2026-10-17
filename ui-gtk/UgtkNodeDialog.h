@@ -70,6 +70,7 @@ typedef enum {
 	UgtkApp*      app;            \
 	UgetNode*     node;           \
 	UgInfo*       node_info;      \
+	gboolean      closing;        \
 	UgtkProxyForm     proxy;      \
 	UgtkDownloadForm  download;   \
 	UgtkCategoryForm  category

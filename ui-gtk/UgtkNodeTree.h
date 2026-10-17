@@ -79,6 +79,8 @@ void   ugtk_node_tree_set_prefix (UgtkNodeTree* utree, UgetNode* prefix_root, gi
 
 // Notify the model that items changed
 void  ugtk_node_tree_refresh (UgtkNodeTree* utree);
+// Emit a precise change and re-sync last_count with the live tree.
+void  ugtk_node_tree_notify (UgtkNodeTree* utree, guint position, guint removed, guint added);
 
 #ifdef __cplusplus
 }

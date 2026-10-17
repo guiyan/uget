@@ -155,3 +155,14 @@ void ugtk_node_tree_refresh (UgtkNodeTree* utree)
 	utree->last_count = new_n;
 	g_list_model_items_changed (G_LIST_MODEL (utree), 0, old_n, new_n);
 }
+
+// Used by the node notification bridge (UgtkApp-callback.c).  The
+// removed/added numbers it computes from node events may drift from
+// what get_n_items() reports (the same node can move/be reported
+// through several virtual trees), so re-sync last_count with the
+// live tree after emitting.
+void ugtk_node_tree_notify (UgtkNodeTree* utree, guint position, guint removed, guint added)
+{
+	g_list_model_items_changed (G_LIST_MODEL (utree), position, removed, added);
+	utree->last_count = ugtk_node_tree_count (utree);
+}

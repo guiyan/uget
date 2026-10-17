@@ -50,7 +50,47 @@ UgtkNodeObject* ugtk_node_object_new (UgetNode* node)
 {
 	UgtkNodeObject* obj;
 
+	ugtk_node_object_track_init ();
 	obj = g_object_new (UGTK_TYPE_NODE_OBJECT, NULL);
 	obj->node = node;
 	return obj;
+}
+
+// ---------------------------------------------------------------
+// Node lifetime tracking.
+//
+// GtkListItem / selection models cache UgtkNodeObject which wraps a
+// raw UgetNode pointer.  The C node can be freed while GTK still
+// holds the wrapper (deleted downloads, recycled clones, etc.)
+// which caused heap-use-after-free crashes (bind_* in UgtkNodeView).
+//
+// The library notifies allocation/freeing of every heap UgetNode;
+// we keep a "live" set, and get_node_from_item() refuses nodes that
+// are no longer alive.
+
+static GHashTable*  node_live_table = NULL;
+
+static void ugtk_node_track_alloc (UgetNode* node)
+{
+	g_hash_table_add (node_live_table, node);
+}
+
+static void ugtk_node_track_free (UgetNode* node)
+{
+	g_hash_table_remove (node_live_table, node);
+}
+
+gboolean  ugtk_node_object_is_live (UgetNode* node)
+{
+	if (node_live_table == NULL)
+		return TRUE;    // tracking disabled: assume alive
+	return g_hash_table_contains (node_live_table, node);
+}
+
+void  ugtk_node_object_track_init (void)
+{
+	if (node_live_table)
+		return;
+	node_live_table = g_hash_table_new (g_direct_hash, g_direct_equal);
+	uget_node_set_track_funcs (ugtk_node_track_alloc, ugtk_node_track_free);
 }

@@ -428,16 +428,31 @@ static void node_inserted (UgetNode* node, UgetNode* sibling, UgetNode* child)
 	if (node == (UgetNode*) app->traveler.category.model->root) {
 		// category inserted
 		pos = uget_node_child_position (node, child) + 1; // +1 for "All Category"
-		g_list_model_items_changed (
-				G_LIST_MODEL (app->traveler.category.model), pos, 0, 1);
+		ugtk_node_tree_notify (app->traveler.category.model, pos, 0, 1);
 		// sync UgtkMenubar.download.move_to
 		ugtk_menubar_sync_category (&app->menubar, app, TRUE);
 	}
 	else if (node == (UgetNode*) app->traveler.download.model->root) {
 		// download inserted
 		pos = uget_node_child_position (node, child);
-		g_list_model_items_changed (
-				G_LIST_MODEL (app->traveler.download.model), pos, 0, 1);
+		ugtk_node_tree_notify (app->traveler.download.model, pos, 0, 1);
+	}
+	// sidebar quantity labels (n_children) only refresh when rows are
+	// re-bound: replace each visible sidebar row with itself
+	// (items-changed (pos, 1, 1)) so the rows rebind with fresh values
+	{
+		UgtkTraveler*  traveler = &app->traveler;
+		guint  i;
+		guint  nitems;
+
+		nitems = g_list_model_get_n_items (
+				G_LIST_MODEL (traveler->category.model));
+		for (i = 0;  i < nitems;  i++)
+			ugtk_node_tree_notify (traveler->category.model, i, 1, 1);
+		nitems = g_list_model_get_n_items (
+				G_LIST_MODEL (traveler->state.model));
+		for (i = 0;  i < nitems;  i++)
+			ugtk_node_list_notify (traveler->state.model, i, 1, 1);
 	}
 }
 
@@ -454,8 +469,7 @@ static void node_removed (UgetNode* node, UgetNode* sibling, UgetNode* child)
 		else
 			pos = app->traveler.category.model->root->n_children;
 		pos += 1;  // +1 for "All Category"
-		g_list_model_items_changed (
-				G_LIST_MODEL (app->traveler.category.model), pos, 1, 0);
+		ugtk_node_tree_notify (app->traveler.category.model, pos, 1, 0);
 		// sync UgtkMenubar.download.move_to
 		ugtk_menubar_sync_category (&app->menubar, app, TRUE);
 	}
@@ -465,8 +479,7 @@ static void node_removed (UgetNode* node, UgetNode* sibling, UgetNode* child)
 			pos = uget_node_child_position (node, sibling);
 		else
 			pos = app->traveler.download.model->root->n_children;
-		g_list_model_items_changed (
-				G_LIST_MODEL (app->traveler.download.model), pos, 1, 0);
+		ugtk_node_tree_notify (app->traveler.download.model, pos, 1, 0);
 	}
 }
 
@@ -483,15 +496,13 @@ static void node_updated (UgetNode* child)
 	if (node == (UgetNode*) app->traveler.category.model->root) {
 		// category changed
 		pos = uget_node_child_position (node, child) + 1;  // +1 for "All Category"
-		g_list_model_items_changed (
-				G_LIST_MODEL (app->traveler.category.model), pos, 1, 1);
+		ugtk_node_tree_notify (app->traveler.category.model, pos, 1, 1);
 		// sync UgtkMenubar.download.move_to
 		ugtk_menubar_sync_category (&app->menubar, app, TRUE);
 	}
 	else if (node == (UgetNode*) app->traveler.download.model->root) {
 		// download changed
 		pos = uget_node_child_position (node, child);
-		g_list_model_items_changed (
-				G_LIST_MODEL (app->traveler.download.model), pos, 1, 1);
+		ugtk_node_tree_notify (app->traveler.download.model, pos, 1, 1);
 	}
 }

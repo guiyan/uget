@@ -161,6 +161,12 @@ void  uget_node_free (UgetNode* node);
 void  uget_node_init (UgetNode* node, UgetNode* node_real);
 void  uget_node_final (UgetNode* node);
 
+// lifecycle hooks for UI layer which caches raw UgetNode pointers.
+// 'node' pointers registered here are heap nodes created by uget_node_new();
+// static/embedded nodes (e.g. UgetApp::real) are never notified.
+typedef void (*UgNodeTrackFunc) (UgetNode* node);
+void  uget_node_set_track_funcs (UgNodeTrackFunc alloc_func, UgNodeTrackFunc free_func);
+
 void  uget_node_clear_fake (UgetNode* node);
 void  uget_node_clear_children (UgetNode* node);
 
