@@ -176,6 +176,9 @@ static void on_confirm_yes (GtkWidget* button, UgtkConfirmDialog* cdialog)
 			app->setting.ui.exit_confirmation = TRUE;
 		else
 			app->setting.ui.exit_confirmation = FALSE;
+		// hide this dialog first so it disappears immediately;
+		// ugtk_app_quit() below never returns
+		gtk_widget_set_visible ((GtkWidget*) cdialog->self, FALSE);
 		ugtk_app_quit (app);
 		break;
 

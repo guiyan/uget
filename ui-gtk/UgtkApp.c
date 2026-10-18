@@ -212,9 +212,9 @@ void  ugtk_app_quit (UgtkApp* app)
 			final_done = TRUE;
 			ugtk_quitting = TRUE;
 			uget_app_clear_attachment ((UgetApp*) app);
+			// ugtk_app_final sends the aria2.shutdown RPC and runs it to
+			// completion synchronously, so no extra wait is needed here
 			ugtk_app_final (app);
-			// sleep 1 second to wait the polling thread and shutdown RPC
-			g_usleep (1000000);
 		}
 	}
 	exit(0);

@@ -300,8 +300,10 @@ static UgThreadResult  uget_aria2_thread (UgetAria2Thread* uathread)
 	for (counts = 0;  ;  counts++) {
 		// finalize
 		if (uathread->finalized == TRUE) {
-			// shutdown request
-			if (uaria2->shutdown && jreq_shutdown == NULL) {
+			// shutdown request (skip if the main thread already sent one)
+			if (uaria2->shutdown && jreq_shutdown == NULL &&
+			    uaria2->shutdown_sent == FALSE)
+			{
 				jreq_shutdown = uget_aria2_alloc (uaria2, TRUE, TRUE);
 				jreq_shutdown->method_static = "aria2.shutdown";
 				uget_aria2_request (uaria2, jreq_shutdown);
@@ -331,8 +333,13 @@ static UgThreadResult  uget_aria2_thread (UgetAria2Thread* uathread)
 
 		// get requests from queue
 		if (uget_aria2_thread_queuing (uathread) == 0) {
-			// default: sleep 0.5 second
-			ug_sleep (uaria2->polling_interval);
+			// default: sleep polling_interval; finalizing threads wake
+			// fast so a pending shutdown RPC isn't held back by the
+			// long idle timer
+			if (uathread->finalized)
+				ug_sleep (20);
+			else
+				ug_sleep (uaria2->polling_interval);
 			continue;
 		}
 
@@ -672,6 +679,13 @@ void uget_aria2_shutdown (UgetAria2* uaria2)
 	UgJsonrpcObject*  jreq;
 	UgJsonrpcObject*  jres;
 
+	// idempotent: only send aria2.shutdown once, otherwise repeated
+	// quit paths (SHUTDOWN_NOW finalize + global_unref) each block the
+	// main thread for a full polling interval waiting for a response
+	if (uaria2->shutdown_sent || uaria2->shutdown == FALSE)
+		return;
+	uaria2->shutdown_sent = TRUE;
+
 	jreq = uget_aria2_alloc (uaria2, TRUE, TRUE);
 	jreq->method_static = "aria2.shutdown";
 	uget_aria2_request (uaria2, jreq);
@@ -729,8 +743,10 @@ UgJsonrpcObject*  uget_aria2_respond (UgetAria2* uaria2, UgJsonrpcObject* reques
 
 	while (link == NULL) {
 		while (completed_changed == uaria2->completed_changed) {
-			// default: sleep 0.5 second
-			ug_sleep (uaria2->polling_interval);
+			// wait for the polling thread to answer; short spin so
+			// synchronous calls (quit-time shutdown RPC) don't stall
+			// for a whole polling interval
+			ug_sleep (50);
 			continue;
 		}
 

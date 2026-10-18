@@ -92,6 +92,7 @@ struct UgetAria2
 	uint8_t       limit_required:1;
 	uint8_t       launched:1;
 	uint8_t       shutdown:1;
+	uint8_t       shutdown_sent:1;
 	uint8_t       uri_changed:1;
 	uint8_t       uri_remote:1;
 
