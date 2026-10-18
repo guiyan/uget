@@ -199,6 +199,24 @@ void  ugtk_app_quit (UgtkApp* app)
 	gtk_widget_set_visible(GTK_WIDGET (app->window.self), FALSE);
 
 	// gtk_main_quit ();
+
+	// The GTK4 port's main() only runs ugtk_app_final() after its
+	// "while (toplevels > 0)" loop ends, but quitting through the tray
+	// menu hid the windows without destroying them and called exit(0)
+	// directly, skipping the finalization that sends aria2.shutdown RPC
+	// (leaving the aria2 daemon running). Reproduce main()'s tail here.
+	{
+		extern gboolean ugtk_quitting;
+		static int final_done = FALSE;
+		if (final_done == FALSE) {
+			final_done = TRUE;
+			ugtk_quitting = TRUE;
+			uget_app_clear_attachment ((UgetApp*) app);
+			ugtk_app_final (app);
+			// sleep 1 second to wait the polling thread and shutdown RPC
+			g_usleep (1000000);
+		}
+	}
 	exit(0);
 }
 
