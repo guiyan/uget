@@ -330,6 +330,10 @@ void  ugtk_node_dialog_set_category (UgtkNodeDialog* ndialog, UgetNode* cnode)
 		if (ndialog->handler_id[1] == 0)
 			ndialog->handler_id[1] = g_signal_connect (sel, "notify::selected",
 					G_CALLBACK (on_selection_changed), ndialog);
+		// set_selected() above emitted "notify::selected" BEFORE the
+		// handler was connected, so the form was never populated with
+		// the category defaults (folder stayed empty). Fill it now.
+		on_selection_changed (GTK_SINGLE_SELECTION (sel), NULL, ndialog);
 	}
 
 	// Live sync of the dialog's category list with the main window's
