@@ -393,6 +393,10 @@ static void ugtk_node_dialog_init_ui (UgtkNodeDialog* ndialog,
 	GtkBox*       vbox;
 
 	ndialog->self = (GtkWindow*) gtk_window_new ();
+	// uniform 1px @borders outline around the whole dialog (fix: the
+	// notebook drew a hairline on the right edge only, leaving the left
+	// edge / white content area without any visible boundary).
+	gtk_widget_add_css_class ((GtkWidget*) ndialog->self, "uget-dialog");
 
 	// main vertical layout
 	vbox = (GtkBox*) gtk_box_new (GTK_ORIENTATION_VERTICAL, 2);
@@ -404,6 +408,8 @@ static void ugtk_node_dialog_init_ui (UgtkNodeDialog* ndialog,
 	gtk_box_append (vbox, widget);
 	ndialog->hbox = (GtkBox*) widget;
 	widget = gtk_notebook_new ();
+	gtk_widget_set_hexpand (widget, TRUE);  // fill the hbox: otherwise empty
+	                                        // space piles up on the right
 	gtk_box_append (ndialog->hbox, widget);
 	ndialog->notebook = widget;
 	notebook = (GtkNotebook*) widget;

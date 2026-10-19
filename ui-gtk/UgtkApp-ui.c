@@ -188,6 +188,15 @@ static void ugtk_install_app_css (void)
 		".uget-toolbar { "
 		"  border-bottom: 1px solid @borders; "
 		"} "
+		"window.uget-dialog > box { "
+		"  border: 2px solid @borders;  "
+		"  border-top-width: 0; "
+		"  border-radius: 0 0 13px 13px; "
+		"} "
+		"window.uget-dialog notebook, "
+		"window.uget-dialog notebook > stack { "
+		"  border: none; "
+		"} "
 	);
 	gtk_style_context_add_provider_for_display (
 		gdk_display_get_default (),
