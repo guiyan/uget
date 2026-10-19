@@ -174,7 +174,8 @@ install_data('sounds/notification.wav',
   install_dir: get_option('datadir') / 'sounds' / 'uget'
 )
 install_subdir('pixmaps/icons/hicolor',
-  install_dir: get_option('datadir') / 'icons'
+  install_dir: get_option('datadir') / 'icons',
+  exclude_files: ['index.theme']  # owned by hicolor-icon-theme, not us
 )
 
 # ============================================================================
