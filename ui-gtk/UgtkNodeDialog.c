@@ -80,8 +80,8 @@ void  ugtk_node_dialog_init (UgtkNodeDialog* ndialog,
 		temp = gtk_paned_get_position (ndialog->app->window.hpaned);
 		temp = temp * 5 / 3;  // (temp * 1.666)
 		// cap: otherwise the dialog blows up with the maximized main window
-		if (temp > 720)
-			temp = 720;
+		if (temp > 560)
+			temp = 560;
 		if (width < temp)
 			gtk_widget_set_size_request (ndialog->notebook, temp, height);
 	}
