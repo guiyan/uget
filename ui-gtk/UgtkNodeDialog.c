@@ -57,6 +57,18 @@ static void on_ok_edit_download (GtkWidget* button, UgtkNodeDialog* ndialog);
 static void on_cancel_node_dialog (GtkWidget* button, UgtkNodeDialog* ndialog);
 static gboolean on_close_node_dialog (GtkWindow* window, UgtkNodeDialog* ndialog);
 
+// This dialog is a fixed popup: if a compositor-side keybind (e.g. niri's
+// maximize-window-to-edges) hits it while focused, revert immediately so
+// the dialog stays in place.
+static void  on_node_dialog_maximized (GObject* gobject,
+                                       GParamSpec* pspec,
+                                       gpointer user_data)
+{
+	GtkWindow* window = (GtkWindow*) gobject;
+	if (gtk_window_is_maximized (window))
+		gtk_window_unmaximize (window);
+}
+
 // Callback for Main Window model changes
 
 // ----------------------------------------------------------------------------
@@ -95,6 +107,8 @@ void  ugtk_node_dialog_init (UgtkNodeDialog* ndialog,
 	// honour max_size == min_size, so this also blocks enhancement keys)
 	gtk_window_set_resizable (window, FALSE);
 	gtk_window_set_transient_for (window, app->window.self);
+	g_signal_connect (window, "notify::maximized",
+			G_CALLBACK (on_node_dialog_maximized), NULL);
 	gtk_window_set_destroy_with_parent (window, TRUE);
 	if (title)
 		gtk_window_set_title (window, title);
