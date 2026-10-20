@@ -77,16 +77,23 @@ void  ugtk_node_dialog_init (UgtkNodeDialog* ndialog,
 	// decide width
 	if (app->setting.window.category) {
 		gtk_widget_get_size_request (ndialog->notebook, &width, &height);
-		temp = gtk_paned_get_position (ndialog->app->window.hpaned);
-		temp = temp * 5 / 3;  // (temp * 1.666)
-		// cap: otherwise the dialog blows up with the maximized main window
-		if (temp > 560)
-			temp = 560;
-		if (width < temp)
-			gtk_widget_set_size_request (ndialog->notebook, temp, height);
+		if (gtk_window_is_maximized ((GtkWindow*) app->window.self)) {
+			// maxed-out main window: the pane position would blow the dialog
+			// up; fall back to a fixed total width (~560 incl. category pane)
+			if (width < 386)
+				gtk_widget_set_size_request (ndialog->notebook, 386, height);
+		} else {
+			temp = gtk_paned_get_position (ndialog->app->window.hpaned);
+			temp = temp * 5 / 3;  // (temp * 1.666)
+			if (width < temp)
+				gtk_widget_set_size_request (ndialog->notebook, temp, height);
+		}
 	}
 
 	window = (GtkWindow*) ndialog->self;
+	// fixed popup: no user resize and no maximize (Wayland compositors
+	// honour max_size == min_size, so this also blocks enhancement keys)
+	gtk_window_set_resizable (window, FALSE);
 	gtk_window_set_transient_for (window, app->window.self);
 	gtk_window_set_destroy_with_parent (window, TRUE);
 	if (title)
@@ -475,7 +482,8 @@ static void ugtk_node_dialog_init_list_ui (UgtkNodeDialog* ndialog,
 		return;
 
 	// decide width
-	if (ndialog->app->setting.window.category)
+	if (ndialog->app->setting.window.category &&
+	    !gtk_window_is_maximized ((GtkWindow*) ndialog->app->window.self))
 		width = gtk_paned_get_position (ndialog->app->window.hpaned);
 	else
 		width = 165;
