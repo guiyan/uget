@@ -189,7 +189,7 @@ static void ugtk_install_app_css (void)
 		"  border-bottom: 1px solid @borders; "
 		"} "
 		"window.uget-dialog > box { "
-		"  border: 2px solid @borders;  "
+		"  border: 1.5px solid @borders;  "
 		"  border-top-width: 0; "
 		"  border-radius: 0 0 13px 13px; "
 		"} "
