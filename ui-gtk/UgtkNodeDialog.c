@@ -81,25 +81,18 @@ void  ugtk_node_dialog_init (UgtkNodeDialog* ndialog,
 {
 	GtkWindow*  window;
 	int         sensitive;
-	int         width, height, temp;
+	int         width, height;
 
 	ndialog->app = app;
 	ugtk_node_dialog_init_ui (ndialog, has_category_form);
 
-	// decide width
+	// decide width - FIXED: the dialog width no longer derives from the
+	// main window's pane position, which made it a different size each
+	// time it opened.  Always use the same fixed width.
 	if (app->setting.window.category) {
 		gtk_widget_get_size_request (ndialog->notebook, &width, &height);
-		if (gtk_window_is_maximized ((GtkWindow*) app->window.self)) {
-			// maxed-out main window: the pane position would blow the dialog
-			// up; fall back to a fixed total width (~560 incl. category pane)
-			if (width < 386)
-				gtk_widget_set_size_request (ndialog->notebook, 386, height);
-		} else {
-			temp = gtk_paned_get_position (ndialog->app->window.hpaned);
-			temp = temp * 5 / 3;  // (temp * 1.666)
-			if (width < temp)
-				gtk_widget_set_size_request (ndialog->notebook, temp, height);
-		}
+		if (width < 386)
+			gtk_widget_set_size_request (ndialog->notebook, 386, height);
 	}
 
 	window = (GtkWindow*) ndialog->self;
@@ -495,12 +488,8 @@ static void ugtk_node_dialog_init_list_ui (UgtkNodeDialog* ndialog,
 	if (ndialog->node_tree && ndialog->node_tree->root == root)
 		return;
 
-	// decide width
-	if (ndialog->app->setting.window.category &&
-	    !gtk_window_is_maximized ((GtkWindow*) ndialog->app->window.self))
-		width = gtk_paned_get_position (ndialog->app->window.hpaned);
-	else
-		width = 165;
+	// decide width - FIXED: always 165, independent of the main window pane
+	width = 165;
 
 	ndialog->node_tree = ugtk_node_tree_new (root, TRUE);
 	ndialog->node_view = ugtk_node_view_new_for_category ();

@@ -38,6 +38,10 @@
 #include <UgUtil.h>
 #include <UgStdio.h>
 #include <UgString.h>
+
+/* Fixed width of the main window's left sidebar (category pane).
+ * The position is neither saved nor restored from Setting.json. */
+#define UGTK_HPANED_FIXED_POSITION  255
 #include <UgFileUtil.h>
 #include <UgHtmlFilter.h>
 #include <UgetPluginCurl.h>
@@ -251,8 +255,10 @@ void  ugtk_app_get_window_setting (UgtkApp* app, UgtkSetting* setting)
 				&setting->window.width, &setting->window.height);
 	}
 	// GtkPaned position
-	if (app->setting.window.category)
-		setting->window.paned_position_h = gtk_paned_get_position (app->window.hpaned);
+	// FIXED: the left sidebar width is a constant - do not save the
+	// dragged position, so it can never change between runs.
+	// if (app->setting.window.category)
+	// 	setting->window.paned_position_h = gtk_paned_get_position (app->window.hpaned);
 	if (app->setting.window.summary)
 		setting->window.paned_position_v = gtk_paned_get_position (app->window.vpaned);
 
@@ -286,10 +292,9 @@ void  ugtk_app_set_window_setting (UgtkApp* app, UgtkSetting* setting)
 	if (setting->window.maximized)
 		gtk_window_maximize (app->window.self);
 	// GtkPaned position
-	if (setting->window.paned_position_h > 0) {
-		gtk_paned_set_position (app->window.hpaned,
-		                        setting->window.paned_position_h);
-	}
+	// FIXED: left sidebar width is a constant (255).  Ignore the value
+	// saved in Setting.json so it can never change between runs.
+	gtk_paned_set_position (app->window.hpaned, UGTK_HPANED_FIXED_POSITION);
 	if (setting->window.paned_position_v > 0) {
 		if (setting->window.paned_position_v > 100) // for uGet < 2.0.4
 		gtk_paned_set_position (app->window.vpaned,
