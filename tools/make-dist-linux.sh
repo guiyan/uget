@@ -76,10 +76,13 @@ copy_deps "$EXE"
 echo "Copying assets..."
 
 # Copy uGet icons
+# Never copy index.theme: /usr/share/icons/hicolor/index.theme belongs to
+# hicolor-icon-theme. Overwriting it hides every theme directory except apps.
 if [ -d "${PROJECT_ROOT}/pixmaps/icons/hicolor" ]; then
     echo "  Copying icons..."
-    mkdir -p "$DIST_DIR/share/icons"
-    cp -r "${PROJECT_ROOT}/pixmaps/icons/hicolor" "$DIST_DIR/share/icons/"
+    mkdir -p "$DIST_DIR/share/icons/hicolor"
+    find "${PROJECT_ROOT}/pixmaps/icons/hicolor" -mindepth 1 -maxdepth 1 -type d \
+        -exec cp -r {} "$DIST_DIR/share/icons/hicolor/" \;
 fi
 
 # Copy Logo
