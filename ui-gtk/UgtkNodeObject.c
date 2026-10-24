@@ -39,6 +39,11 @@ G_DEFINE_TYPE (UgtkNodeObject, ugtk_node_object, G_TYPE_OBJECT)
 
 static void ugtk_node_object_class_init (UgtkNodeObjectClass* klass)
 {
+	g_signal_new ("data-changed",
+	              G_TYPE_FROM_CLASS (klass),
+	              G_SIGNAL_RUN_LAST,
+	              0, NULL, NULL, NULL,
+	              G_TYPE_NONE, 0);
 }
 
 static void ugtk_node_object_init (UgtkNodeObject* self)
@@ -54,6 +59,11 @@ UgtkNodeObject* ugtk_node_object_new (UgetNode* node)
 	obj = g_object_new (UGTK_TYPE_NODE_OBJECT, NULL);
 	obj->node = node;
 	return obj;
+}
+
+void  ugtk_node_object_touch (UgtkNodeObject* obj)
+{
+	g_signal_emit_by_name (obj, "data-changed");
 }
 
 // ---------------------------------------------------------------

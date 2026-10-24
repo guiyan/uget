@@ -590,13 +590,84 @@ static void teardown_item (GtkSignalListItemFactory* factory, GtkListItem* item,
 	gtk_list_item_set_child (item, NULL);
 }
 
-static GtkListItemFactory* make_factory (GCallback setup_fn, GCallback bind_fn)
+// ------------------------------------
+// Row refresh without model re-notify.
+//
+// Each factory's "bind" callback sets the initial cell contents and
+// subscribes the row to the bound UgtkNodeObject's "data-changed"
+// signal; when the notification bridge touches the object the row
+// re-runs its original bind callback.  No items_changed() is needed,
+// so GtkMultiSelection keeps the selection intact across refreshes.
+//
+// Per-cell state lives on the child widget:
+//   "uget-refresh" - bind/refresh function for this column
+//   "uget-obj"     - the object this signal connection belongs to
+//   "uget-hid"     - handler id of the connection
+
+static void item_data_changed (GObject* obj, gpointer data)
+{
+	GtkListItem*  item = data;
+	GtkWidget*    child;
+	void          (*refresh) (GtkSignalListItemFactory*, GtkListItem*, gpointer);
+
+	if (item == NULL || (gpointer) gtk_list_item_get_item (item) != (gpointer) obj)
+		return;    // the row was recycled: old signals must not fire
+	child = gtk_list_item_get_child (item);
+	if (child == NULL)
+		return;
+	refresh = g_object_get_data (G_OBJECT (child), "uget-refresh");
+	if (refresh == NULL)
+		return;
+	refresh (NULL, item, NULL);
+}
+
+static void bind_item (GtkSignalListItemFactory* factory, GtkListItem* item, gpointer data)
+{
+	UgtkNodeObject*  obj;
+	GtkWidget*       child;
+	gpointer         refresh;
+
+	child = gtk_list_item_get_child (item);
+	if (child == NULL)
+		return;
+	g_object_set_data (G_OBJECT (child), "uget-refresh", data);
+	obj = gtk_list_item_get_item (item);
+	if (obj) {
+		gulong hid = g_signal_connect_object (obj, "data-changed",
+				G_CALLBACK (item_data_changed), G_OBJECT (item), 0);
+		g_object_set_data (G_OBJECT (child), "uget-obj", obj);
+		g_object_set_data (G_OBJECT (child), "uget-hid", GUINT_TO_POINTER (hid));
+	}
+	// initial contents
+	if (data)
+		((void (*)(GtkSignalListItemFactory*, GtkListItem*, gpointer)) data) (factory, item, NULL);
+}
+
+static void unbind_item (GtkSignalListItemFactory* factory, GtkListItem* item, gpointer data)
+{
+	GtkWidget*       child;
+	UgtkNodeObject*  obj;
+
+	child = gtk_list_item_get_child (item);
+	if (child == NULL)
+		return;
+	obj = g_object_get_data (G_OBJECT (child), "uget-obj");
+	if (obj) {
+		gulong hid = GPOINTER_TO_UINT (g_object_get_data (G_OBJECT (child), "uget-hid"));
+		g_signal_handler_disconnect (obj, hid);
+	}
+	g_object_set_data (G_OBJECT (child), "uget-obj", NULL);
+	g_object_set_data (G_OBJECT (child), "uget-hid", NULL);
+}
+
+static GtkListItemFactory* make_factory (GCallback setup_fn, GCallback refresh_fn)
 {
 	GtkListItemFactory* factory;
 
 	factory = gtk_signal_list_item_factory_new ();
 	g_signal_connect (factory, "setup", setup_fn, NULL);
-	g_signal_connect (factory, "bind",  bind_fn,  NULL);
+	g_signal_connect (factory, "bind",  G_CALLBACK (bind_item),  refresh_fn);
+	g_signal_connect (factory, "unbind", G_CALLBACK (unbind_item), NULL);
 	g_signal_connect (factory, "teardown", G_CALLBACK (teardown_item), NULL);
 	return factory;
 }

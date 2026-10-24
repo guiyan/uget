@@ -65,6 +65,12 @@ struct UgtkNodeObjectClass
 GType            ugtk_node_object_get_type (void);
 UgtkNodeObject*  ugtk_node_object_new (UgetNode* node);
 
+// Emit the "data-changed" signal so views connected to this object
+// re-read the underlying node data.  Used by the notification bridge
+// to refresh row contents WITHOUT emitting model items_changed()
+// (which would make GtkMultiSelection drop the row selection).
+void  ugtk_node_object_touch (UgtkNodeObject* obj);
+
 // TRUE while 'node' is a heap UgetNode that has not been freed yet.
 // Nodes may be freed by the library while GTK still caches wrappers
 // for them; treat dead nodes like NULL in view bindings.

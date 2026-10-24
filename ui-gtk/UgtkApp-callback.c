@@ -37,6 +37,8 @@
 #include <UgtkApp.h>
 #include <UgtkTrayIcon.h>
 #include <UgtkConfirmDialog.h>
+#include <UgtkNodeObject.h>
+#include <UgtkNodeTree.h>
 
 // static functions
 static void  ugtk_window_init_callback   (struct UgtkWindow*  window,  UgtkApp* app);
@@ -419,8 +421,6 @@ static void ugtk_toolbar_init_callback (struct UgtkToolbar* toolbar, UgtkApp* ap
 // ----------------------------------------------------------------------------
 // functions for UgetNode.notification
 
-static void  notify_download_preserve_selection (UgtkApp* app, guint pos);
-
 static void node_inserted (UgetNode* node, UgetNode* sibling, UgetNode* child)
 {
 	UgtkApp*  app;
@@ -487,9 +487,10 @@ static void node_removed (UgetNode* node, UgetNode* sibling, UgetNode* child)
 
 static void node_updated (UgetNode* child)
 {
-	UgetNode*  node;
-	UgtkApp*   app;
-	int        pos;
+	UgetNode*        node;
+	UgtkApp*         app;
+	int              pos;
+	UgtkNodeObject*  obj;
 
 	node = child->parent;
 	if (node == NULL)
@@ -503,45 +504,16 @@ static void node_updated (UgetNode* child)
 		ugtk_menubar_sync_category (&app->menubar, app, TRUE);
 	}
 	else if (node == (UgetNode*) app->traveler.download.model->root) {
-		// download changed
-		pos = uget_node_child_position (node, child);
-		// The (pos,1,1) "replace row to force rebind" refresh makes
-		// GtkMultiSelection drop the selection of the replaced row,
-		// which silently deselects whatever the user had clicked and
-		// turns all row actions (pause, queue, delete, ...) into
-		// no-ops.  Save and restore the selection around the refresh.
-		notify_download_preserve_selection (app, (guint) pos);
+		// download changed: refresh the row through its object signal.
+		// Never emit items_changed(pos,1,1) here -- that "replace row"
+		// report makes GtkMultiSelection drop the row selection, and
+		// this fires on every active download at every 0.5s dispatch
+		// tick, which silently deselected whatever the user had
+		// clicked and turned pause/queue/move/delete into no-ops.
+		obj = ugtk_node_tree_find_object (app->traveler.download.model, child);
+		if (obj) {
+			ugtk_node_object_touch (obj);
+			g_object_unref (obj);
+		}
 	}
-}
-
-// emit items_changed(pos, 1, 1) on the download model while keeping the
-// user's selection: GtkMultiSelection drops selection for rows reported
-// as removed, and this refresh fires on every active download at every
-// 0.5s dispatch tick.
-static void  notify_download_preserve_selection (UgtkApp* app, guint pos)
-{
-	GtkSelectionModel* sel = GTK_SELECTION_MODEL (app->traveler.download.selection);
-	GtkBitset*   ref;
-	GtkBitset*   saved;
-	GtkBitset*   mask;
-
-	// GtkMultiSelection returns a reference to its internal bitset,
-	// which is mutated while the items_changed() below is processed:
-	// copy it first, otherwise the "saved" selection collapses to the
-	// post-change state and cannot be restored.
-	ref = gtk_selection_model_get_selection (sel);
-	saved = gtk_bitset_copy (ref);
-	gtk_bitset_unref (ref);
-
-	ugtk_node_tree_notify (app->traveler.download.model, pos, 1, 1);
-	// positions did not shift (exactly one row replaced at the same
-	// spot), so the saved bitset describes the same rows.
-	if (gtk_bitset_get_size (saved) > 0) {
-		mask = gtk_bitset_new_range (0,
-				g_list_model_get_n_items (
-					G_LIST_MODEL (app->traveler.download.model)));
-		gtk_selection_model_set_selection (sel, saved, mask);
-		gtk_bitset_unref (mask);
-	}
-	gtk_bitset_unref (saved);
 }

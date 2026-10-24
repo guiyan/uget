@@ -127,7 +127,53 @@ static gpointer list_model_get_item (GListModel* list, guint position)
 	node = ugtk_node_tree_nth (utree, position);
 	if (node == NULL)
 		return NULL;
-	return ugtk_node_object_new (node);
+	return ugtk_node_tree_find_object (utree, node);
+}
+
+// --- canonical row objects -------------------------------------------
+//
+// get_item() used to construct a fresh UgtkNodeObject on every call,
+// which broke the GListModel identity contract ("the same item must
+// be returned for the same position while unchanged") and made it
+// impossible to reach the object that row widgets are bound to.  Keep
+// one canonical wrapper per node; entries self-remove when the
+// wrapper is finalized (weak notify, the cache holds no reference).
+
+static gboolean ugtk_node_tree_cache_is_dead (gpointer key, gpointer value, gpointer user)
+{
+	return value == user;
+}
+
+static void ugtk_node_tree_cache_weak (gpointer data, GObject* dead)
+{
+	UgtkNodeTree* utree = data;
+
+	// entries are keyed by node, the value is the wrapper: the dead
+	// wrapper reaches us only as 'dead', so match on the value side.
+	if (utree->obj_cache)
+		g_hash_table_foreach_remove (utree->obj_cache,
+				ugtk_node_tree_cache_is_dead, dead);
+}
+
+UgtkNodeObject* ugtk_node_tree_find_object (UgtkNodeTree* utree, UgetNode* node)
+{
+	UgtkNodeObject* obj;
+
+	if (utree->obj_cache == NULL) {
+		utree->obj_cache = g_hash_table_new (
+				g_direct_hash, g_direct_equal);
+	}
+	obj = g_hash_table_lookup (utree->obj_cache, node);
+	if (obj == NULL) {
+		// first reference hands ownership to the caller; the cache
+		// keeps only a weak pointer (g_object_weak_ref above).
+		obj = ugtk_node_object_new (node);
+		g_hash_table_insert (utree->obj_cache, node, obj);
+		g_object_weak_ref (G_OBJECT (obj),
+				ugtk_node_tree_cache_weak, utree);
+		return obj;
+	}
+	return g_object_ref (obj);
 }
 
 // --- public API ---

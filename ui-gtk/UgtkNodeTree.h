@@ -41,6 +41,7 @@
 
 #include <gtk/gtk.h>
 #include <UgetNode.h>
+#include <UgtkNodeObject.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -65,6 +66,12 @@ struct UgtkNodeTree
 		UgetNode* root;
 		gint      len;
 	} prefix;
+
+	// canonical UgtkNodeObject per row node: get_item() must keep item
+	// identity stable while the model is unchanged (GListModel
+	// contract), and the notification bridge needs to reach the very
+	// object instance the view's row widgets are bound to.
+	GHashTable* obj_cache;
 };
 
 struct UgtkNodeTreeClass
@@ -76,6 +83,11 @@ UgtkNodeTree*  ugtk_node_tree_new (UgetNode* root, gboolean list_only);
 
 GType  ugtk_node_tree_get_type (void);
 void   ugtk_node_tree_set_prefix (UgtkNodeTree* utree, UgetNode* prefix_root, gint prefix_len);
+
+// Canonical UgtkNodeObject wrapper for 'node' (as returned by
+// get_item()), or NULL when the node is not a row of this tree.
+// Returns a full reference (g_object_ref-style).
+UgtkNodeObject*  ugtk_node_tree_find_object (UgtkNodeTree* utree, UgetNode* node);
 
 // Notify the model that items changed
 void  ugtk_node_tree_refresh (UgtkNodeTree* utree);
