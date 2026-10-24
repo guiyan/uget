@@ -61,17 +61,24 @@ static UgetNode* get_node_at (GListModel* model, guint pos)
 }
 
 // helper: find position of a UgetNode in a GListModel
+// Matches by 'base' (the real node) as well, because the models list
+// regenerated clone nodes while set_selected()/set_cursor() callers
+// hold either the clone or the real node.
 static int find_node_position (GListModel* model, UgetNode* target)
 {
 	guint n = g_list_model_get_n_items (model);
 	guint i;
+
+	if (target && ugtk_node_object_is_live (target) == FALSE)
+		return -1;
 
 	for (i = 0; i < n; i++) {
 		UgtkNodeObject* obj = g_list_model_get_item (model, i);
 		if (obj) {
 			UgetNode* node = obj->node;
 			g_object_unref (obj);
-			if (node == target)
+			if (node && ugtk_node_object_is_live (node) &&
+			    (node == target || node->base == target->base))
 				return (int) i;
 		}
 	}
